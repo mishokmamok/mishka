@@ -3,8 +3,11 @@ name: Telegram Mafia Bot
 on:
   workflow_dispatch:
   schedule:
-    # Перезапуск каждые 6 часов (0:00, 6:00, 12:00, 18:00 UTC)
-    - cron: '0 */6 * * *'
+    # Перезапуск каждые 1.5 часа для максимальной стабильности
+    - cron: '0 */1 * * *'
+    - cron: '30 */1 * * *'
+    - cron: '0 */3 * * *'
+    - cron: '30 */3 * * *'
   push:
     branches: [ main ]
     paths:
@@ -23,7 +26,7 @@ concurrency:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 370
+    timeout-minutes: 200  # 3 часа 20 минут максимум
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -62,16 +65,16 @@ jobs:
           # Проверяем, что бот запустился
           if ps -p $BOT_PID > /dev/null; then
             echo "Bot started successfully with PID: $BOT_PID"
-            echo "Bot will run for 6 hours (21600 seconds). Streaming logs:"
+            echo "Bot will run for 3 hours (10800 seconds). Streaming logs:"
 
             # Стримим логи в фоне, чтобы они отображались в GitHub Actions
             tail -F bot.log &
             TAIL_PID=$!
 
-            # Ждем 6 часов (21600 секунд), параллельно tail будет писать логи
-            sleep 21600
+            # Ждем 3 часа (10800 секунд), параллельно tail будет писать логи
+            sleep 10800
 
-            echo "6 hours completed, stopping bot for restart..."
+            echo "3 hours completed, stopping bot for restart..."
             kill $BOT_PID 2>/dev/null || true
             kill $TAIL_PID 2>/dev/null || true
             sleep 5
