@@ -1,0 +1,51 @@
+name: Telegram Mafia Bot - Workflow Monitor
+
+on:
+  workflow_run:
+    workflows: ["Telegram Mafia Bot"]
+    types:
+      - completed
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  monitor-workflow:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check workflow status
+        id: check-status
+        run: |
+          echo "Checking workflow status..."
+          
+          if [ "${{ github.event.workflow_run.conclusion }}" = "success" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "Workflow completed successfully"
+          else
+            echo "status=failed" >> $GITHUB_OUTPUT
+            echo "Workflow failed or was cancelled"
+          fi
+
+      - name: Trigger restart on failure
+        if: steps.check-status.outputs.status == 'failed'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Workflow failed, triggering bot restart..."
+          curl -s -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/bot.yml/dispatches \
+            -d '{"ref":"main"}'
+          
+          echo "Restart triggered successfully"
+
+      - name: Log workflow status
+        run: |
+          echo "Workflow: ${{ github.event.workflow_run.name }}"
+          echo "Status: ${{ steps.check-status.outputs.status }}"
+          echo "Conclusion: ${{ github.event.workflow_run.conclusion }}"
+          echo "Timestamp: $(date)"
+
+
