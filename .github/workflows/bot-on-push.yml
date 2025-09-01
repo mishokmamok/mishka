@@ -1,1 +1,40 @@
-#
+name: Telegram Mafia Bot - Auto Restart on Push
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '**/*.py'
+      - 'requirements.txt'
+      - '.github/workflows/**'
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  restart-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Trigger bot restart
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Code changes detected, triggering bot restart..."
+          
+          # Останавливаем текущий бот
+          echo "Stopping current bot..."
+          curl -s -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/bot.yml/dispatches \
+            -d '{"ref":"main"}'
+          
+          echo "Bot restart triggered successfully"
+          echo "Changes detected in:"
+          echo "${{ github.event.head_commit.message }}"
+
+

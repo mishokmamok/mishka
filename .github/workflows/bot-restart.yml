@@ -1,1 +1,38 @@
-#
+name: Telegram Mafia Bot - Emergency Restart
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Telegram Mafia Bot"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  emergency-restart:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'failure' || github.event.workflow_run.conclusion == 'cancelled' }}
+    steps:
+      - name: Emergency bot restart
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Emergency restart triggered due to workflow failure..."
+          
+          # Ждем немного перед перезапуском
+          sleep 30
+          
+          # Запускаем новый экземпляр бота
+          curl -s -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/bot.yml/dispatches \
+            -d '{"ref":"main"}'
+          
+          echo "Emergency restart completed"
+          echo "Previous workflow result: ${{ github.event.workflow_run.conclusion }}"
+
+
