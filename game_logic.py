@@ -836,6 +836,33 @@ class GameManager:
                     else:
                         logger.info(f"process_night_results: игрок {chosen_target} спасен от убийства")
                         game.night_kill_target = chosen_target
+            else:
+                # Мафия голосовала, но голоса не засчитаны - выбираем случайную цель
+                alive_players = [p for p in game.get_alive_players() if p.role != PlayerRole.MAFIA]
+                if alive_players:
+                    chosen_target = random.choice(alive_players).user_id
+                    target_player = game.players.get(chosen_target)
+                    
+                    if target_player and target_player.is_alive:
+                        # Проверяем, был ли игрок спасен доктором
+                        was_saved = False
+                        for doctor_id, save_target in game.doctor_saves.items():
+                            if save_target == chosen_target:
+                                was_saved = True
+                                logger.info(f"process_night_results: игрок {chosen_target} спасен доктором {doctor_id}")
+                                break
+                        
+                        if not was_saved:
+                            target_player.is_alive = False
+                            killed_player = target_player
+                            game.night_kill_target = chosen_target
+                            logger.info(f"process_night_results: игрок {chosen_target} ({target_player.first_name}) убит мафией (случайный выбор)")
+                            
+                            # На случай смерти мафии — обновляем маппинг мафии
+                            self._refresh_mafia_mapping(chat_key)
+                        else:
+                            logger.info(f"process_night_results: игрок {chosen_target} спасен от убийства")
+                            game.night_kill_target = chosen_target
         
         # Формируем сообщение о результатах ночи
         summary_lines = []
@@ -868,8 +895,35 @@ class GameManager:
                 # уже обработан выше; если жертва спасена доктором, ниже будет строка про спасение
                 pass
             else:
-                # Мафия не голосовала вообще — действительно спокойная ночь
-                summary_lines.append("🌙 Мафия не выбрала цель. Ночь прошла спокойно.")
+                # Мафия не голосовала вообще — выбираем случайную цель
+                alive_players = [p for p in game.get_alive_players() if p.role != PlayerRole.MAFIA]
+                if alive_players:
+                    chosen_target = random.choice(alive_players).user_id
+                    target_player = game.players.get(chosen_target)
+                    
+                    if target_player and target_player.is_alive:
+                        # Проверяем, был ли игрок спасен доктором
+                        was_saved = False
+                        for doctor_id, save_target in game.doctor_saves.items():
+                            if save_target == chosen_target:
+                                was_saved = True
+                                logger.info(f"process_night_results: игрок {chosen_target} спасен доктором {doctor_id}")
+                                break
+                        
+                        if not was_saved:
+                            target_player.is_alive = False
+                            killed_player = target_player
+                            game.night_kill_target = chosen_target
+                            logger.info(f"process_night_results: игрок {chosen_target} ({target_player.first_name}) убит мафией (автоматический выбор)")
+                            
+                            # На случай смерти мафии — обновляем маппинг мафии
+                            self._refresh_mafia_mapping(chat_key)
+                        else:
+                            logger.info(f"process_night_results: игрок {chosen_target} спасен от убийства")
+                            game.night_kill_target = chosen_target
+                else:
+                    # Нет мирных игроков для убийства
+                    summary_lines.append("🌙 Мафия не может выбрать цель - нет мирных игроков.")
         else:
             # Мафии нет — действительно спокойная ночь
             summary_lines.append("🌅 Ночь прошла спокойно. Никто не пострадал.")
