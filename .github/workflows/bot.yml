@@ -26,6 +26,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Stop existing bot processes
+        run: |
+          echo "Stopping any existing bot processes..."
+          pkill -f "python main.py" || true
+          sleep 5
+          echo "Existing processes stopped"
+
       - name: Run bot for 6 hours
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
