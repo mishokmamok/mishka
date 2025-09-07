@@ -88,6 +88,7 @@ def get_player_selection_keyboard(
 
     buttons = []
     excluded = exclude_target_ids or set()
+    logger.debug(f"get_player_selection_keyboard: исключаемые игроки: {excluded}")
     for player in players:
         # Показываем только живых игроков, исключая себя и заблокированные цели
         if (player.is_alive 
@@ -102,6 +103,8 @@ def get_player_selection_keyboard(
                 )
             ])
             logger.debug(f"get_player_selection_keyboard: добавлена кнопка для игрока {player.first_name} (ID: {player.user_id})")
+        else:
+            logger.debug(f"get_player_selection_keyboard: игрок {player.first_name} (ID: {player.user_id}) исключен - жив: {player.is_alive}, exclude_user_id: {exclude_user_id}, в excluded: {player.user_id in excluded}")
 
     # Добавляем кнопку "Пропустить" для некоторых действий
     if action_type in ["doctor_save", "butterfly_distract"]:

@@ -465,13 +465,8 @@ async def _send_night_action_keyboards(chat_key: str, bot):
         doctor_excluded_targets.add(game.last_butterfly_distract_target)
         commissioner_excluded_targets.add(game.last_butterfly_distract_target)
     
-    # Добавляем всех ранее отвлеченных игроков в исключения для мафии и доктора
-    try:
-        mafia_excluded_targets.update(game.butterfly_distracted_players)
-        doctor_excluded_targets.update(game.butterfly_distracted_players)
-        commissioner_excluded_targets.update(game.butterfly_distracted_players)
-    except Exception:
-        pass
+    # НЕ добавляем всех ранее отвлеченных игроков - они должны быть доступны для выбора
+    # Отвлечение действует только на одну ночь
     for player in alive_players:
         try:
             # Если игрок отвлечен этой ночью — не отправляем ему клавиатуру действий

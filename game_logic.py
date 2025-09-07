@@ -448,6 +448,8 @@ class GameManager:
         game.game_started = True
         game.current_round = 1
         game.night_prompts_sent = False  # Сбрасываем флаг для отправки ночных клавиатур
+        # Очищаем список отвлеченных игроков для новой игры
+        game.butterfly_distracted_players.clear()
         # Обновляем привязку мафии к игре для приватного чата
         self._refresh_mafia_mapping(chat_key)
         
@@ -1090,6 +1092,8 @@ class GameManager:
             # Переход к ночной фазе после голосования без казни
             game.phase = GamePhase.NIGHT
             game.current_round += 1
+            # Очищаем список отвлеченных игроков для новой ночи
+            game.butterfly_distracted_players.clear()
             return "🗳️ Никто не проголосовал. Сегодня казни не будет.", 0
         
         # Находим игрока с максимальным количеством голосов
@@ -1137,6 +1141,8 @@ class GameManager:
                     player.vote_target = None
                 game.phase = GamePhase.NIGHT
                 game.current_round += 1
+                # Очищаем список отвлеченных игроков для новой ночи
+                game.butterfly_distracted_players.clear()
                 return message, executed_id
         
         # Есть однозначный кандидат на казнь
@@ -1186,6 +1192,8 @@ class GameManager:
         # Переход к ночной фазе после казни
         game.phase = GamePhase.NIGHT
         game.current_round += 1
+        # Очищаем список отвлеченных игроков для новой ночи
+        game.butterfly_distracted_players.clear()
         
         return message, executed_id
     
