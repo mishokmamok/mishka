@@ -1,0 +1,23 @@
+name: Auto Restart on Push
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  restart-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restart bot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Code changed, restarting bot..."
+          curl -s -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/bot.yml/dispatches \
+            -d '{"ref":"main"}'
+          echo "Bot restarted"
+
+
