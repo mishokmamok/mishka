@@ -3,7 +3,7 @@ name: Telegram Mafia Bot
 on:
   workflow_dispatch:
   schedule:
-    # Перезапуск каждые 6 часов
+    # Перезапуск каждые 6ч
     - cron: '0 */6 * * *'
   push:
     branches: [ main ]
