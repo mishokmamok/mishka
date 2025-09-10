@@ -18,6 +18,90 @@ _autopilot_tasks: dict[str, asyncio.Task] = {}
 
 logger = logging.getLogger(__name__)
 
+# ID администратора/разработчика для специальных команд
+ADMIN_USER_ID = 833357704
+
+# Ожидание текста рассылки в ЛС: user_id -> True
+_broadcast_waiting: dict[int, bool] = {}
+
+# Команда /broadcast: инициирует запрос текста рассылки (только ЛС и только ADMIN_USER_ID)
+@router.message(Command("broadcast"))
+async def cmd_broadcast(message: Message):
+    # Только в ЛС
+    if message.chat.type != "private":
+        return
+    # Только для конкретного администратора
+    if message.from_user.id != ADMIN_USER_ID:
+        return
+
+    _broadcast_waiting[message.from_user.id] = True
+    await message.answer(
+        "✍️ Отправьте текст рассылки одним сообщением. Для отмены — /cancel"
+    )
+
+# Отмена режима рассылки
+@router.message(Command("cancel"))
+async def cmd_cancel_broadcast(message: Message):
+    if message.chat.type != "private":
+        return
+    if message.from_user.id != ADMIN_USER_ID:
+        return
+    if _broadcast_waiting.pop(message.from_user.id, None):
+        await message.answer("❌ Режим рассылки отменён")
+    else:
+        await message.answer("ℹ️ Нечего отменять: режим рассылки не активен")
+
+# Обработка ЛС в режиме ожидания текста рассылки (ставим раньше общего приватного перехватчика)
+@router.message(F.chat.type == "private")
+async def handle_broadcast_input(message: Message):
+    # Игнорируем команды здесь, ими занимаются соответствующие хендлеры
+    if not message.text or message.text.startswith("/"):
+        return
+    user_id = message.from_user.id
+    if user_id != ADMIN_USER_ID:
+        return
+    if not _broadcast_waiting.get(user_id):
+        return
+
+    # Получили текст рассылки
+    content = message.text
+    # Выходим из режима ожидания до начала отправки
+    _broadcast_waiting.pop(user_id, None)
+
+    # Сбор целей: все активные игры (по chat_key вида chatId_threadId)
+    try:
+        active_keys = list(game_manager.active_games.keys())
+    except Exception:
+        active_keys = []
+
+    if not active_keys:
+        await message.answer("⚠️ Нет активных тем для рассылки")
+        return
+
+    sent = 0
+    failed = 0
+    for chat_key in active_keys:
+        try:
+            chat_id = get_chat_id_from_key(chat_key)
+            thread_id = get_thread_id_from_key(chat_key)
+            message_thread_id = None if thread_id == 0 else thread_id
+            await message.bot.send_message(
+                chat_id,
+                content,
+                message_thread_id=message_thread_id
+            )
+            sent += 1
+            await asyncio.sleep(0.05)  # легкое размежевание, чтобы не словить лимиты
+        except TelegramForbiddenError:
+            failed += 1
+        except TelegramBadRequest:
+            failed += 1
+        except Exception as e:
+            failed += 1
+            logger.warning(f"broadcast: ошибка отправки в {chat_key}: {e}")
+
+    await message.answer(f"✅ Разослано: {sent}. Ошибок: {failed}.")
+
 # Обработчик команды /start
 @router.message(Command("start"))
 async def start_command(message: Message):
