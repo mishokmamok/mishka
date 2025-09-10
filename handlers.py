@@ -3,6 +3,8 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from aiogram.exceptions import TelegramForbiddenError, TelegramBadRequest
 import asyncio
+import os
+import json
 import logging
 import random
 
@@ -25,6 +27,34 @@ ADMIN_USER_ID = 833357704
 # Ожидание текста рассылки в ЛС: user_id -> True
 _broadcast_waiting: dict[int, bool] = {}
 
+# Текущая цель рассылки (читается из файла/окружения): {"chat_id": int, "thread_id": int}
+_broadcast_target: dict[str, int] = {"chat_id": 0, "thread_id": 0}
+
+def _load_broadcast_target_from_file() -> None:
+    try:
+        if os.path.exists("broadcast_target.json"):
+            with open("broadcast_target.json", "r", encoding="utf-8") as f:
+                data = json.load(f)
+                _broadcast_target["chat_id"] = int(data.get("chat_id", 0))
+                _broadcast_target["thread_id"] = int(data.get("thread_id", 0))
+                logger.info(f"broadcast: загружена цель из файла: chat_id={_broadcast_target['chat_id']}, thread_id={_broadcast_target['thread_id']}")
+        else:
+            # Фолбэк на переменные окружения
+            _broadcast_target["chat_id"] = int(BROADCAST_CHAT_ID or 0)
+            _broadcast_target["thread_id"] = int(BROADCAST_THREAD_ID or 0)
+            logger.info(f"broadcast: цель по умолчанию из ENV: chat_id={_broadcast_target['chat_id']}, thread_id={_broadcast_target['thread_id']}")
+    except Exception as e:
+        logger.warning(f"broadcast: ошибка загрузки цели: {e}")
+
+def _save_broadcast_target_to_file() -> None:
+    try:
+        with open("broadcast_target.json", "w", encoding="utf-8") as f:
+            json.dump({"chat_id": _broadcast_target["chat_id"], "thread_id": _broadcast_target["thread_id"]}, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.warning(f"broadcast: ошибка сохранения цели: {e}")
+
+_load_broadcast_target_from_file()
+
 # Команда /broadcast: инициирует запрос текста рассылки (только ЛС и только ADMIN_USER_ID)
 @router.message(Command("broadcast"))
 async def cmd_broadcast(message: Message):
@@ -39,6 +69,37 @@ async def cmd_broadcast(message: Message):
     await message.answer(
         "✍️ Отправьте текст рассылки одним сообщением. Для отмены — /cancel"
     )
+
+# Команда для установки цели рассылки: /set_broadcast_target <chat_id> <thread_id>
+@router.message(Command("set_broadcast_target"))
+async def cmd_set_broadcast_target(message: Message):
+    if message.chat.type != "private":
+        return
+    if message.from_user.id != ADMIN_USER_ID:
+        return
+    parts = (message.text or "").split()
+    if len(parts) != 3:
+        await message.answer("Использование: /set_broadcast_target <chat_id> <thread_id>. Для главной темы укажите 0 для thread_id.")
+        return
+    try:
+        chat_id = int(parts[1])
+        thread_id = int(parts[2])
+    except Exception:
+        await message.answer("❌ Неверные числа. Пример: /set_broadcast_target -1001234567890 39431")
+        return
+    _broadcast_target["chat_id"] = chat_id
+    _broadcast_target["thread_id"] = thread_id
+    _save_broadcast_target_to_file()
+    await message.answer(f"✅ Цель рассылки сохранена. chat_id={chat_id}, thread_id={thread_id}")
+
+# Показать текущую цель
+@router.message(Command("get_broadcast_target"))
+async def cmd_get_broadcast_target(message: Message):
+    if message.chat.type != "private":
+        return
+    if message.from_user.id != ADMIN_USER_ID:
+        return
+    await message.answer(f"Текущая цель: chat_id={_broadcast_target['chat_id']}, thread_id={_broadcast_target['thread_id']}")
 
 # Отмена режима рассылки
 @router.message(Command("cancel"))
@@ -69,29 +130,57 @@ async def handle_broadcast_input(message: Message):
     # Выходим из режима ожидания до начала отправки
     _broadcast_waiting.pop(user_id, None)
 
-    # Сбор целей: все активные игры (по chat_key вида chatId_threadId)
+    # Отправляем в выбранную админом цель независимо от активных игр
+    target_chat = _broadcast_target.get("chat_id", 0)
+    target_thread = _broadcast_target.get("thread_id", 0)
+    if not target_chat:
+        await message.answer("⚠️ Цель не настроена. Установите: /set_broadcast_target <chat_id> <thread_id>")
+        return
+    try:
+        message_thread_id = None if target_thread == 0 else target_thread
+        await message.bot.send_message(
+            target_chat,
+            content,
+            message_thread_id=message_thread_id
+        )
+        await message.answer("✅ Сообщение отправлено в выбранную тему")
+    except TelegramForbiddenError as e:
+        await message.answer("❌ Нет прав отправлять в целевой чат/тему. Проверьте, что бот админ и тема существует.")
+        logger.warning(f"broadcast: forbidden: {e}")
+    except TelegramBadRequest as e:
+        await message.answer("❌ Некорректный chat_id/thread_id или тема отключена.")
+        logger.warning(f"broadcast: bad request: {e}")
+    except Exception as e:
+        await message.answer("❌ Ошибка отправки. Подробности в логах.")
+        logger.warning(f"broadcast: unexpected: {e}")
+
+# Дополнительная команда: рассылка по всем активным играм (по желанию)
+@router.message(Command("broadcast_all"))
+async def cmd_broadcast_all(message: Message):
+    if message.chat.type != "private" or message.from_user.id != ADMIN_USER_ID:
+        return
+    _broadcast_waiting[message.from_user.id] = "all"
+    await message.answer("✍️ Отправьте текст рассылки. Будет выслано во все активные игры. Для отмены — /cancel")
+
+# Обработка ЛС для broadcast_all
+@router.message(F.chat.type == "private")
+async def handle_broadcast_all_input(message: Message):
+    if not message.text or message.text.startswith("/"):
+        return
+    user_id = message.from_user.id
+    if user_id != ADMIN_USER_ID:
+        return
+    if _broadcast_waiting.get(user_id) != "all":
+        return
+    content = message.text
+    _broadcast_waiting.pop(user_id, None)
     try:
         active_keys = list(game_manager.active_games.keys())
     except Exception:
         active_keys = []
-
     if not active_keys:
-        # Пытаемся отправить в резервную тему, если настроена
-        if BROADCAST_CHAT_ID != 0:
-            try:
-                message_thread_id = None if BROADCAST_THREAD_ID == 0 else BROADCAST_THREAD_ID
-                await message.bot.send_message(
-                    BROADCAST_CHAT_ID,
-                    content,
-                    message_thread_id=message_thread_id
-                )
-                await message.answer("✅ Разослано в резервную тему")
-                return
-            except Exception as e:
-                logger.warning(f"broadcast: ошибка отправки в резервную тему: {e}")
-        await message.answer("⚠️ Нет активных тем для рассылки")
+        await message.answer("⚠️ Нет активных игр для массовой рассылки")
         return
-
     sent = 0
     failed = 0
     for chat_key in active_keys:
@@ -99,21 +188,12 @@ async def handle_broadcast_input(message: Message):
             chat_id = get_chat_id_from_key(chat_key)
             thread_id = get_thread_id_from_key(chat_key)
             message_thread_id = None if thread_id == 0 else thread_id
-            await message.bot.send_message(
-                chat_id,
-                content,
-                message_thread_id=message_thread_id
-            )
+            await message.bot.send_message(chat_id, content, message_thread_id=message_thread_id)
             sent += 1
-            await asyncio.sleep(0.05)  # легкое размежевание, чтобы не словить лимиты
-        except TelegramForbiddenError:
-            failed += 1
-        except TelegramBadRequest:
-            failed += 1
+            await asyncio.sleep(0.05)
         except Exception as e:
             failed += 1
-            logger.warning(f"broadcast: ошибка отправки в {chat_key}: {e}")
-
+            logger.warning(f"broadcast_all: ошибка отправки в {chat_key}: {e}")
     await message.answer(f"✅ Разослано: {sent}. Ошибок: {failed}.")
 
 # Обработчик команды /start
