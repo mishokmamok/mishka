@@ -10,6 +10,7 @@ from keyboards import get_main_menu_keyboard, get_back_keyboard, get_new_game_ke
 from game_logic import game_manager
 from models import GamePhase, PlayerRole
 from config import MAX_PLAYERS, NIGHT_TIMEOUT_SECS, DAY_DISCUSS_TIMEOUT_SECS, VOTING_TIMEOUT_SECS
+from config import BROADCAST_CHAT_ID, BROADCAST_THREAD_ID
 
 router = Router()
 
@@ -75,6 +76,19 @@ async def handle_broadcast_input(message: Message):
         active_keys = []
 
     if not active_keys:
+        # Пытаемся отправить в резервную тему, если настроена
+        if BROADCAST_CHAT_ID != 0:
+            try:
+                message_thread_id = None if BROADCAST_THREAD_ID == 0 else BROADCAST_THREAD_ID
+                await message.bot.send_message(
+                    BROADCAST_CHAT_ID,
+                    content,
+                    message_thread_id=message_thread_id
+                )
+                await message.answer("✅ Разослано в резервную тему")
+                return
+            except Exception as e:
+                logger.warning(f"broadcast: ошибка отправки в резервную тему: {e}")
         await message.answer("⚠️ Нет активных тем для рассылки")
         return
 

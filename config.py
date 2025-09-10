@@ -27,6 +27,20 @@ try:
 except ValueError:
     BOT_WORK_TIMEOUT_HOURS = 6.0
 
+# Настройки рассылки по умолчанию (если нет активных игр)
+# Укажите ID чата (супергруппы/форума) и ID темы, куда слать рассылку
+# Пример в .env:
+# BROADCAST_CHAT_ID=-1001234567890
+# BROADCAST_THREAD_ID=39431
+def _parse_int(value: str, default: int = 0) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return default
+
+BROADCAST_CHAT_ID = _parse_int(os.getenv('BROADCAST_CHAT_ID', '0'), 0)
+BROADCAST_THREAD_ID = _parse_int(os.getenv('BROADCAST_THREAD_ID', '0'), 0)
+
 # Роли и их количество (в зависимости от количества игроков)
 ROLE_DISTRIBUTION = {
     4:  {"мафия": 1, "мирный": 2, "доктор": 1},
